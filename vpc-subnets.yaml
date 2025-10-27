@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: VPC and Subnets for Clouxter Test
+Description: VPC and Subnets for Clouxter Test1
 
 Parameters:
   VpcCidr:
