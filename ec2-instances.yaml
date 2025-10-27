@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: EC2 Instances for Clouxter Test Punto3
+Description: EC2 Instances for Clouxter Test
 
 Parameters:
   VpcId:
@@ -16,7 +16,7 @@ Parameters:
     Default: t3.micro
   AmiId:
     Type: String
-    Default: ami-0c55b159cbfafe1f0  # Amazon Linux 2 en us-east-1, 
+    Default: ami-07860a2d7eb515d9a  # Actualizado con el AMI que proporcionaste
 
 Resources:
   InstanceSecurityGroup:
@@ -28,7 +28,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: 0.0.0.0/0  
+          CidrIp: 0.0.0.0/0  # Restringe a tu IP en producción
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
@@ -48,7 +48,7 @@ Resources:
       SubnetId: !Ref PublicSubnet1Id
       SecurityGroupIds:
         - !Ref InstanceSecurityGroup
-      PrivateIpAddress: 10.0.1.10
+      # PrivateIpAddress: 10.0.1.10  # Eliminado para asignación dinámica
       Tags:
         - Key: Name
           Value: Instance1
@@ -61,7 +61,7 @@ Resources:
       SubnetId: !Ref PublicSubnet2Id
       SecurityGroupIds:
         - !Ref InstanceSecurityGroup
-      PrivateIpAddress: 10.0.2.10  # Ajustado a la segunda subred
+      # PrivateIpAddress: 10.0.2.10  # Eliminado para asignación dinámica
       Tags:
         - Key: Name
           Value: Instance2
