@@ -1,0 +1,22 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DynamoDB Table for Clouxter Test
+
+Resources:
+  ClouxterDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: ClouxterTestTable
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      Tags:
+        - Key: Name
+          Value: ClouxterDynamoDB
+
+Outputs:
+  TableName:
+    Value: !Ref ClouxterDynamoDBTable
