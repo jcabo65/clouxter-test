@@ -1,4 +1,4 @@
-name: Deploy VPC to AWS
+name: Deploy VPC and EC2 to AWS
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'vpc-subnets.yaml'
+      - 'ec2-instances.yaml'
 
 jobs:
   deploy:
@@ -19,16 +20,29 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1  # Asegúrate de que esta región coincida con tu cuenta AWS
+          aws-region: us-east-1
 
-      - name: Validate CloudFormation Template
+      - name: Validate VPC Template
         run: |
           aws cloudformation validate-template --template-body file://vpc-subnets.yaml
 
-      - name: Deploy CloudFormation Stack
+      - name: Deploy VPC Stack
         run: |
           aws cloudformation deploy \
             --template-file vpc-subnets.yaml \
             --stack-name ClouxterVPCStack \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset
+
+      - name: Validate EC2 Template
+        run: |
+          aws cloudformation validate-template --template-body file://ec2-instances.yaml
+
+      - name: Deploy EC2 Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file ec2-instances.yaml \
+            --stack-name ClouxterEC2Stack \
+            --parameter-overrides VpcId=$(aws cloudformation describe-stacks --stack-name ClouxterVPCStack --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text) PublicSubnet1Id=$(aws cloudformation describe-stacks --stack-name ClouxterVPCStack --query 'Stacks[0].Outputs[?OutputKey==`PublicSubnet1Id`].OutputValue' --output text) PublicSubnet2Id=$(aws cloudformation describe-stacks --stack-name ClouxterVPCStack --query 'Stacks[0].Outputs[?OutputKey==`PublicSubnet2Id`].OutputValue' --output text) \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset
