@@ -5,7 +5,7 @@ Resources:
   ClouxterDynamoDBTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: ClouxterTestTable-20251027  # Nombre único con fecha
+      TableName: ClouxterTestTable-20251027
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
@@ -20,3 +20,4 @@ Resources:
 Outputs:
   TableName:
     Value: !Ref ClouxterDynamoDBTable
+
