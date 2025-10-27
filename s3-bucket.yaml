@@ -1,0 +1,16 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: S3 Bucket for Clouxter Test
+
+Resources:
+  ClouxterS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: clouxter-test-bucket-20251027 
+      AccessControl: Private
+      Tags:
+        - Key: Name
+          Value: ClouxterS3
+
+Outputs:
+  BucketName:
+    Value: !Ref ClouxterS3Bucket
