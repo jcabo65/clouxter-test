@@ -1,4 +1,4 @@
-name: Deploy VPC and EC2 to AWS
+name: Deploy VPC, EC2, DynamoDB, and S3 to AWS
 
 on:
   push:
@@ -7,6 +7,8 @@ on:
     paths:
       - 'vpc-subnets.yaml'
       - 'ec2-instances.yaml'
+      - 'dynamodb-table.yaml'
+      - 's3-bucket.yaml'
 
 jobs:
   deploy:
@@ -44,5 +46,29 @@ jobs:
             --template-file ec2-instances.yaml \
             --stack-name ClouxterEC2Stack \
             --parameter-overrides VpcId=$(aws cloudformation describe-stacks --stack-name ClouxterVPCStack --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text) PublicSubnet1Id=$(aws cloudformation describe-stacks --stack-name ClouxterVPCStack --query 'Stacks[0].Outputs[?OutputKey==`PublicSubnet1Id`].OutputValue' --output text) PublicSubnet2Id=$(aws cloudformation describe-stacks --stack-name ClouxterVPCStack --query 'Stacks[0].Outputs[?OutputKey==`PublicSubnet2Id`].OutputValue' --output text) \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset
+
+      - name: Validate DynamoDB Template
+        run: |
+          aws cloudformation validate-template --template-body file://dynamodb-table.yaml
+
+      - name: Deploy DynamoDB Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file dynamodb-table.yaml \
+            --stack-name ClouxterDynamoDBStack \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset
+
+      - name: Validate S3 Template
+        run: |
+          aws cloudformation validate-template --template-body file://s3-bucket.yaml
+
+      - name: Deploy S3 Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file s3-bucket.yaml \
+            --stack-name ClouxterS3Stack \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset
