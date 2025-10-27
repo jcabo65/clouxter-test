@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: EC2 Instances for Clouxter Test
+
+Parameters:
+  VpcId:
+    Type: String
+    Description: The VPC ID where instances will be launched
+  PublicSubnet1Id:
+    Type: String
+    Description: The ID of the first public subnet
+  PublicSubnet2Id:
+    Type: String
+    Description: The ID of the second public subnet
+  InstanceType:
+    Type: String
+    Default: t2.micro
+  AmiId:
+    Type: String
+    Default: ami-0c55b159cbfafe1f0  # Amazon Linux 2 en us-east-1, 
+
+Resources:
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH and HTTP access
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0  
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: ClouxterSG
+
+  EC2Instance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmiId
+      SubnetId: !Ref PublicSubnet1Id
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      PrivateIpAddress: 10.0.1.10
+      Tags:
+        - Key: Name
+          Value: Instance1
+
+  EC2Instance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmiId
+      SubnetId: !Ref PublicSubnet2Id
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      PrivateIpAddress: 10.0.2.10  # Ajustado a la segunda subred
+      Tags:
+        - Key: Name
+          Value: Instance2
+
+Outputs:
+  Instance1Id:
+    Value: !Ref EC2Instance1
+  Instance2Id:
+    Value: !Ref EC2Instance2
