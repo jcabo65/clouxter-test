@@ -1,4 +1,4 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: '2010-09-09-Punto 3'
 Description: EC2 Instances for Clouxter Test
 
 Parameters:
