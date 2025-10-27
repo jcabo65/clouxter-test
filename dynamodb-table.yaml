@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: DynamoDB Table for Clouxter Test
+Description: DynamoDB Table for Clouxter Test1
 
 Resources:
   ClouxterDynamoDBTable:
