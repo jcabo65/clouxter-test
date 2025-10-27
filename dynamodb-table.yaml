@@ -1,11 +1,11 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: DynamoDB Table for Clouxter Test1
+Description: DynamoDB Table for Clouxter Test
 
 Resources:
   ClouxterDynamoDBTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: ClouxterTestTable
+      TableName: ClouxterTestTable-20251027  # Nombre único con fecha
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
