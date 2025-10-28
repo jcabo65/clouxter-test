@@ -19,14 +19,14 @@ Parameters:
     Type: String
     Default: "0.0.0.0/0"
     Description: "Solo aplica si EnableSSH=true (ej: 1.2.3.4/32)"
-
-Mappings: {}
+  AmiId:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 
 Conditions:
   OpenSSH: !Equals [!Ref EnableSSH, "true"]
 
 Resources:
-  # Security Group
   InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -39,7 +39,6 @@ Resources:
         - Key: Name
           Value: ClouxterSG
 
-  # Ingress HTTP 80
   SGIngressHttp80:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
@@ -49,7 +48,6 @@ Resources:
       ToPort: 80
       CidrIp: 0.0.0.0/0
 
-  # Ingress SSH 22 (condicional)
   SGIngressSsh22:
     Condition: OpenSSH
     Type: AWS::EC2::SecurityGroupIngress
@@ -60,7 +58,6 @@ Resources:
       ToPort: 22
       CidrIp: !Ref AdminCidr
 
-  # IAM Role + InstanceProfile (para SSM)
   Ec2Role:
     Type: AWS::IAM::Role
     Properties:
@@ -82,14 +79,13 @@ Resources:
     Properties:
       Roles: [ !Ref Ec2Role ]
 
-  # Launch template-like config via Instance props
   EC2Instance1:
     Type: AWS::EC2::Instance
     DependsOn: Ec2InstanceProfile
     Properties:
       IamInstanceProfile: !Ref Ec2InstanceProfile
       InstanceType: !Ref InstanceType
-      ImageId: !Ref AmiId  # viene del SSM parameter de abajo (ssm dynamic ref)
+      ImageId: !Ref AmiId
       SubnetId: !Ref PublicSubnet1Id
       SecurityGroupIds: [ !Ref InstanceSecurityGroup ]
       MetadataOptions:
@@ -139,11 +135,6 @@ Resources:
         - Key: Name
           Value: Instance2
 
-  # Dynamic reference al AMI AL2023 (ssm:GetParameter necesario)
-  AmiId:
-    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
-    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
-
 Outputs:
   InstanceSecurityGroupId:
     Value: !Ref InstanceSecurityGroup
@@ -151,3 +142,4 @@ Outputs:
     Value: !Ref EC2Instance1
   Instance2Id:
     Value: !Ref EC2Instance2
+
