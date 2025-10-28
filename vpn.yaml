@@ -16,8 +16,9 @@ Parameters:
 
   CustomerGatewayIp:
     Type: String
+    Default: "203.0.113.10"  # IP de prueba (no enrutable), suficiente para crear el stack
     Description: "IP pública del gateway on-prem (CGW), ej: 1.2.3.4"
-    AllowedPattern: "(^$)|(^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\\.|$)){4}$)"
+    AllowedPattern: "^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\\.|$)){4}$"
 
   CustomerBgpAsn:
     Type: Number
