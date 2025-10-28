@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Site-to-Site VPN (VGW+CGW+VPNConnection) con rutas estáticas a on-prem"
+Description: "Site-to-Site VPN (VGW+CGW+VPNConnection) con rutas estáticas a on-premises"
 
 Parameters:
   VpcId:
