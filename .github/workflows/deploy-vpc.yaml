@@ -24,12 +24,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      # (Opcional pero recomendado) Linter rápido de CFN
-      # - name: cfn-lint
-      #   run: |
-      #     pip install cfn-lint
-      #     cfn-lint -t vpc-subnets.yaml ec2-instances.yaml dynamodb-table.yaml s3-bucket.yaml vpn.yaml
-
       # ---------- VPC ----------
       - name: Validate VPC Template
         run: aws cloudformation validate-template --template-body file://vpc-subnets.yaml
@@ -94,15 +88,17 @@ jobs:
       - name: Validate VPN Template
         run: aws cloudformation validate-template --template-body file://vpn.yaml
 
+
       - name: Deploy VPN Stack
-        run: |
-          aws cloudformation deploy \
-            --template-file vpn.yaml \
-            --stack-name ClouxterVPNStack \
-            --parameter-overrides \
-              VpcId=${{ env.VPC_ID }} \
-              PrivateRouteTable1Id=${{ env.PRT1 }} \
-              PrivateRouteTable2Id=${{ env.PRT2 }} \
-              CustomerGatewayIp=${{ secrets.CGW_PUBLIC_IP }} \
-              CustomerBgpAsn=65000 \
-            --no-fail-on-empty-changeset
+         run: |
+           aws cloudformation deploy \
+             --template-file vpn.yaml \
+             --stack-name ClouxterVPNStack \
+             --parameter-overrides \
+               VpcId=${{ env.VPC_ID }} \
+               PrivateRouteTable1Id=${{ env.PRT1 }} \
+               PrivateRouteTable2Id=${{ env.PRT2 }} \
+-              CustomerGatewayIp=${{ secrets.CGW_PUBLIC_IP }} \
+               CustomerBgpAsn=65000 \
+             --no-fail-on-empty-changeset
+
