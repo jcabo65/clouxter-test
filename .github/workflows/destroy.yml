@@ -1,0 +1,124 @@
+name: Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      full_wipe:
+        description: "Also delete retained S3 bucket and DynamoDB table?"
+        required: false
+        default: "false"
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+      VPC_STACK: ClouxterVPCStack
+      EC2_STACK: ClouxterEC2Stack
+      DDB_STACK: ClouxterDynamoDBStack
+      S3_STACK:  ClouxterS3Stack
+      VPN_STACK: ClouxterVPNStack
+      FULL_WIPE: ${{ github.event.inputs.full_wipe }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Capture S3 & DDB identifiers (for optional FULL_WIPE)
+        id: capture
+        shell: bash
+        run: |
+          # DynamoDB TableName (from stack outputs; may be empty if stack missing)
+          DDB_TABLE=$(aws cloudformation describe-stacks --stack-name "$DDB_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='TableName'].OutputValue" --output text 2>/dev/null || true)
+          echo "DDB_TABLE=$DDB_TABLE" >> $GITHUB_ENV
+          echo "Captured DynamoDB table: ${DDB_TABLE:-<none>}"
+
+          # S3 BucketName (from stack outputs; may be empty)
+          S3_BUCKET=$(aws cloudformation describe-stacks --stack-name "$S3_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" --output text 2>/dev/null || true)
+          echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
+          echo "Captured S3 bucket: ${S3_BUCKET:-<none>}"
+
+      - name: Delete VPN stack (if exists)
+        shell: bash
+        run: |
+          if aws cloudformation describe-stacks --stack-name "$VPN_STACK" >/dev/null 2>&1; then
+            aws cloudformation delete-stack --stack-name "$VPN_STACK"
+            aws cloudformation wait stack-delete-complete --stack-name "$VPN_STACK"
+          else
+            echo "VPN stack not found, skipping."
+          fi
+
+      - name: Delete EC2 stack (if exists)
+        shell: bash
+        run: |
+          if aws cloudformation describe-stacks --stack-name "$EC2_STACK" >/dev/null 2>&1; then
+            aws cloudformation delete-stack --stack-name "$EC2_STACK"
+            aws cloudformation wait stack-delete-complete --stack-name "$EC2_STACK"
+          else
+            echo "EC2 stack not found, skipping."
+          fi
+
+      - name: Delete DynamoDB stack (if exists)
+        shell: bash
+        run: |
+          if aws cloudformation describe-stacks --stack-name "$DDB_STACK" >/dev/null 2>&1; then
+            aws cloudformation delete-stack --stack-name "$DDB_STACK"
+            aws cloudformation wait stack-delete-complete --stack-name "$DDB_STACK"
+          else
+            echo "DynamoDB stack not found, skipping."
+          fi
+
+      - name: Delete S3 stack (if exists)
+        shell: bash
+        run: |
+          if aws cloudformation describe-stacks --stack-name "$S3_STACK" >/dev/null 2>&1; then
+            aws cloudformation delete-stack --stack-name "$S3_STACK"
+            aws cloudformation wait stack-delete-complete --stack-name "$S3_STACK"
+          else
+            echo "S3 stack not found, skipping."
+          fi
+
+      - name: Delete VPC stack (if exists)
+        shell: bash
+        run: |
+          if aws cloudformation describe-stacks --stack-name "$VPC_STACK" >/dev/null 2>&1; then
+            aws cloudformation delete-stack --stack-name "$VPC_STACK"
+            aws cloudformation wait stack-delete-complete --stack-name "$VPC_STACK"
+          else
+            echo "VPC stack not found, skipping."
+          fi
+
+      - name: FULL WIPE — delete retained DynamoDB table (optional)
+        if: env.FULL_WIPE == 'true'
+        shell: bash
+        run: |
+          if [ -n "${DDB_TABLE}" ] && [ "${DDB_TABLE}" != "None" ]; then
+            echo "Deleting retained DynamoDB table: $DDB_TABLE"
+            aws dynamodb delete-table --table-name "$DDB_TABLE" || true
+            # Wait until table is gone (optional)
+            for i in {1..30}; do
+              aws dynamodb describe-table --table-name "$DDB_TABLE" >/dev/null 2>&1 || { echo "Table deleted."; exit 0; }
+              echo "Waiting for table deletion..."; sleep 10
+            done
+          else
+            echo "No DynamoDB table captured, skipping."
+          fi
+
+      - name: FULL WIPE — delete retained S3 bucket (optional)
+        if: env.FULL_WIPE == 'true'
+        shell: bash
+        run: |
+          if [ -n "${S3_BUCKET}" ] && [ "${S3_BUCKET}" != "None" ]; then
+            echo "Force-removing S3 bucket (all versions/objects): s3://$S3_BUCKET"
+            aws s3 rb "s3://$S3_BUCKET" --force || true
+          else
+            echo "No S3 bucket captured, skipping."
+          fi
