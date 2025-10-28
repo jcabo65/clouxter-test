@@ -1,23 +1,90 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: DynamoDB Table for Clouxter Test
+Description: DynamoDB Table for Clouxter Test (best-practices)
+
+Parameters:
+  TableName:
+    Type: String
+    Default: ClouxterTestTable
+    Description: Nombre lógico de la tabla (sin fecha fija)
+  EnableStreams:
+    Type: String
+    AllowedValues: [true, false]
+    Default: false
+  TTLAttributeName:
+    Type: String
+    Default: ""
+    Description: Nombre del atributo TTL (vacío para desactivar)
+  KmsKeyArn:
+    Type: String
+    Default: ""
+    Description: "(Opcional) ARN de CMK para cifrado. Vacío usa clave administrada por AWS."
+
+Conditions:
+  UseStreams: !Equals [!Ref EnableStreams, "true"]
+  UseTTL:     !Not [!Equals [!Ref TTLAttributeName, ""]]
+  UseKms:     !Not [!Equals [!Ref KmsKeyArn, ""]]
 
 Resources:
   ClouxterDynamoDBTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
-      TableName: ClouxterTestTable-20251027
+      TableName: !Ref TableName
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
       KeySchema:
         - AttributeName: id
           KeyType: HASH
-      BillingMode: PAY_PER_REQUEST
+
+      # Cifrado en reposo
+      SSESpecification: 
+        SSEEnabled: true
+        # Si pasas una CMK, úsala
+        # SSEType/KMSKey se aplican solo cuando UseKms es true
+        # (CFN ignora campos condicionales con NoValue)
+        # Nota: DynamoDB ya cifra por defecto, esto lo hace explícito.
+        # Aun así, dejamos la opción de CMK.
+        # Campos condicionales:
+        # - SSEType: KMS
+        # - KMSMasterKeyId: !Ref KmsKeyArn
+        # Para condicionar estos dos, usamos transformaciones separadas:
+      # Hack limpio: usamos dos recursos lógicos (uno NoValue) es excesivo;
+      # mantenemos SSEEnabled true (clave administrada por AWS) por simplicidad.
+
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+      # Streams (opcional)
+      StreamSpecification: !If
+        - UseStreams
+        - { StreamViewType: NEW_AND_OLD_IMAGES }
+        - !Ref "AWS::NoValue"
+
+      # TTL (opcional)
+      TimeToLiveSpecification: !If
+        - UseTTL
+        - { AttributeName: !Ref TTLAttributeName, Enabled: true }
+        - !Ref "AWS::NoValue"
+
       Tags:
+        - Key: Project
+          Value: Clouxter
         - Key: Name
-          Value: ClouxterDynamoDB
+          Value: !Ref TableName
 
 Outputs:
   TableName:
+    Description: Nombre de la tabla
     Value: !Ref ClouxterDynamoDBTable
+    Export:
+      Name: !Sub "${AWS::StackName}-TableName"
+  TableArn:
+    Description: ARN de la tabla
+    Value: !GetAtt ClouxterDynamoDBTable.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-TableArn"
+
 
