@@ -1,25 +1,23 @@
-AWSTemplateFormatVersion: '2010-09-09'
-Description: S3 Bucket for Clouxter Test (secure-by-default + opcional VPCE)
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "S3 Bucket for Clouxter Test (hardened + options)"
 
 Parameters:
   BucketName:
     Type: String
     Default: ""
-    Description: "(Opcional) Nombre explícito del bucket (debe ser globalmente único, minúsculas)"
+    Description: "(Opcional) Nombre del bucket (único globalmente)"
   VpcEndpointId:
     Type: String
     Default: ""
-    Description: "(Opcional) VPCE para restringir acceso al bucket desde la VPC"
+    Description: "(Opcional) VPCE para restringir acceso al bucket"
   EnableIntelligentTiering:
     Type: String
-    Default: false
-    AllowedValues: [true, false]
-    Description: "Transicionar objetos a Intelligent-Tiering"
+    Default: "false"
+    AllowedValues: ["true", "false"]
   EnableArchive:
     Type: String
-    Default: false
-    AllowedValues: [true, false]
-    Description: "Mover versiones antiguas a Glacier Deep Archive (ejemplo)"
+    Default: "false"
+    AllowedValues: ["true", "false"]
 
 Conditions:
   UseProvidedName: !Not [!Equals [!Ref BucketName, ""]]
@@ -33,55 +31,59 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      # Nombre flexible: si no pasas uno, generamos uno único por cuenta y región
       BucketName: !If
         - UseProvidedName
         - !Ref BucketName
         - !Sub "clouxter-${AWS::AccountId}-${AWS::Region}-bucket"
 
-      # Dueño del bucket es dueño de los objetos; ACLs deshabilitadas
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
 
-      # Bloqueo público completo
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         IgnorePublicAcls: true
         BlockPublicPolicy: true
         RestrictPublicBuckets: true
 
-      # Versionado (buenas prácticas)
       VersioningConfiguration:
         Status: Enabled
 
-      # Cifrado en reposo (SSE-S3). Si luego quieres KMS, lo agregamos.
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
 
-      # Lifecycle (opcional: Intelligent-Tiering + manejo de versiones)
       LifecycleConfiguration:
         Rules:
-          # Regla 1: transición a Intelligent-Tiering (opcional)
+          # Regla 1: Transición a Intelligent-Tiering (opcional)
           - Id: ToIntelligentTiering
             Status: !If [UseIT, Enabled, Disabled]
-            Prefix: ""
             Transitions:
               - StorageClass: INTELLIGENT_TIERING
                 TransitionInDays: 30
-          # Regla 2: housekeeping de versiones antiguas (opcional Deep Archive)
-          - Id: NonCurrentVersionManagement
-            Status: Enabled
-            NoncurrentVersionTransitions:
-              - !If
-                - UseArchive
-                - { StorageClass: DEEP_ARCHIVE, TransitionInDays: 180 }
-                - { StorageClass: STANDARD_IA, TransitionInDays: 90 }
-            NoncurrentVersionExpiration:
-              NoncurrentDays: 365
-          # Regla 3: abortar cargas multipart incompletas
+
+          # Regla 2A/2B: manejo de versiones no actuales (escoge según UseArchive)
+          - Fn::If:
+              - UseArchive
+              - # Deep Archive
+                Id: NonCurrentToDeepArchive
+                Status: Enabled
+                NoncurrentVersionTransitions:
+                  - StorageClass: DEEP_ARCHIVE
+                    TransitionInDays: 180
+                NoncurrentVersionExpiration:
+                  NoncurrentDays: 365
+              - # Standard-IA
+                Id: NonCurrentToStandardIA
+                Status: Enabled
+                NoncurrentVersionTransitions:
+                  - StorageClass: STANDARD_IA
+                    TransitionInDays: 90
+                NoncurrentVersionExpiration:
+                  NoncurrentDays: 365
+
+          # Regla 3: abortar multipart incompleto
           - Id: AbortIncompleteMultipart
             Status: Enabled
             AbortIncompleteMultipartUpload:
@@ -93,7 +95,6 @@ Resources:
         - Key: Name
           Value: !If [UseProvidedName, !Ref BucketName, !Sub "clouxter-${AWS::AccountId}-${AWS::Region}-bucket"]
 
-  # Política para exigir TLS y, si se pasa VPC Endpoint, restringir por VPCE
   ClouxterS3BucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -101,7 +102,6 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          # 1) Denegar cualquier acceso sin TLS
           - Sid: DenyInsecureTransport
             Effect: Deny
             Principal: "*"
@@ -113,21 +113,20 @@ Resources:
               Bool:
                 aws:SecureTransport: "false"
 
-          # 2) (Opcional) Restringir acceso solamente vía tu VPCE
-          - !If
-            - UseVpce
-            - {
-                Sid: "DenyRequestsNotThroughVPCE",
-                Effect: "Deny",
-                Principal: "*",
-                Action: "s3:*",
+          - Fn::If:
+              - UseVpce
+              - 
+                Sid: DenyRequestsNotThroughVPCE
+                Effect: Deny
+                Principal: "*"
+                Action: "s3:*"
                 Resource:
-                  [ !Sub "${ClouxterS3Bucket.Arn}", !Sub "${ClouxterS3Bucket.Arn}/*" ],
+                  - !Sub "${ClouxterS3Bucket.Arn}"
+                  - !Sub "${ClouxterS3Bucket.Arn}/*"
                 Condition:
                   StringNotEquals:
                     aws:SourceVpce: !Ref VpcEndpointId
-              }
-            - { Ref: "AWS::NoValue" }
+              - !Ref "AWS::NoValue"
 
 Outputs:
   BucketName:
@@ -136,3 +135,4 @@ Outputs:
   BucketArn:
     Description: ARN del bucket
     Value: !GetAtt ClouxterS3Bucket.Arn
+
