@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Site-to-Site VPN (VGW+CGW+VPNConnection) with static routes to on-prem
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC donde se adjunta la VPN (VGW)
+  PrivateRouteTable1Id:
+    Type: AWS::EC2::RouteTable::Id
+    Description: Route Table privada #1 (AZ1)
+  PrivateRouteTable2Id:
+    Type: AWS::EC2::RouteTable::Id
+    Description: Route Table privada #2 (AZ2)
+  CustomerGatewayIp:
+    Type: String
+    Description: "IP pública del gateway on-prem (CGW), ej: 1.2.3.4"
+  CustomerBgpAsn:
+    Type: Number
+    Default: 65000
+    Description: "ASN del on-prem (aunque usaremos rutas ESTÁTICAS, AWS lo pide)"
+
+Resources:
+  VpnGateway:
+    Type: AWS::EC2::VPNGateway
+    Properties:
+      Type: ipsec.1
+      AmazonSideAsn: 64512
+      Tags: [{ Key: Name, Value: ClouxterVGW }]
+
+  AttachVpnGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VpcId
+      VpnGatewayId: !Ref VpnGateway
+
+  CustomerGateway:
+    Type: AWS::EC2::CustomerGateway
+    Properties:
+      Type: ipsec.1
+      BgpAsn: !Ref CustomerBgpAsn
+      IpAddress: !Ref CustomerGatewayIp
+      Tags: [{ Key: Name, Value: ClouxterCGW }]
+
+  VpnConnection:
+    Type: AWS::EC2::VPNConnection
+    Properties:
+      Type: ipsec.1
+      StaticRoutesOnly: true        # <-- ESTÁTICA (más simple para la prueba)
+      CustomerGatewayId: !Ref CustomerGateway
+      VpnGatewayId: !Ref VpnGateway
+      Tags: [{ Key: Name, Value: ClouxterVPN }]
+
+  # Rutas ESTÁTICAS sobre la conexión (le dicen a AWS qué redes hay on-prem)
+  VpnRouteA:
+    Type: AWS::EC2::VPNConnectionRoute
+    Properties:
+      VpnConnectionId: !Ref VpnConnection
+      DestinationCidrBlock: 172.16.0.0/16
+  VpnRouteB:
+    Type: AWS::EC2::VPNConnectionRoute
+    Properties:
+      VpnConnectionId: !Ref VpnConnection
+      DestinationCidrBlock: 172.16.1.0/24
+  VpnRouteC:
+    Type: AWS::EC2::VPNConnectionRoute
+    Properties:
+      VpnConnectionId: !Ref VpnConnection
+      DestinationCidrBlock: 172.16.2.0/24
+
+  # Rutas en tus Route Tables PRIVADAS apuntando al VGW (una por red)
+  PrivateToOnPremRoute1A:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1Id
+      DestinationCidrBlock: 172.16.0.0/16
+      GatewayId: !Ref VpnGateway
+  PrivateToOnPremRoute1B:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1Id
+      DestinationCidrBlock: 172.16.1.0/24
+      GatewayId: !Ref VpnGateway
+  PrivateToOnPremRoute1C:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1Id
+      DestinationCidrBlock: 172.16.2.0/24
+      GatewayId: !Ref VpnGateway
+
+  PrivateToOnPremRoute2A:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2Id
+      DestinationCidrBlock: 172.16.0.0/16
+      GatewayId: !Ref VpnGateway
+  PrivateToOnPremRoute2B:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2Id
+      DestinationCidrBlock: 172.16.1.0/24
+      GatewayId: !Ref VpnGateway
+  PrivateToOnPremRoute2C:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2Id
+      DestinationCidrBlock: 172.16.2.0/24
+      GatewayId: !Ref VpnGateway
+
+Outputs:
+  VpnGatewayId:     { Value: !Ref VpnGateway }
+  CustomerGatewayId:{ Value: !Ref CustomerGateway }
+  VpnConnectionId:  { Value: !Ref VpnConnection }
