@@ -1,16 +1,138 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: S3 Bucket for Clouxter Test
+Description: S3 Bucket for Clouxter Test (secure-by-default + opcional VPCE)
+
+Parameters:
+  BucketName:
+    Type: String
+    Default: ""
+    Description: "(Opcional) Nombre explícito del bucket (debe ser globalmente único, minúsculas)"
+  VpcEndpointId:
+    Type: String
+    Default: ""
+    Description: "(Opcional) VPCE para restringir acceso al bucket desde la VPC"
+  EnableIntelligentTiering:
+    Type: String
+    Default: false
+    AllowedValues: [true, false]
+    Description: "Transicionar objetos a Intelligent-Tiering"
+  EnableArchive:
+    Type: String
+    Default: false
+    AllowedValues: [true, false]
+    Description: "Mover versiones antiguas a Glacier Deep Archive (ejemplo)"
+
+Conditions:
+  UseProvidedName: !Not [!Equals [!Ref BucketName, ""]]
+  UseVpce:         !Not [!Equals [!Ref VpcEndpointId, ""]]
+  UseIT:           !Equals [!Ref EnableIntelligentTiering, "true"]
+  UseArchive:      !Equals [!Ref EnableArchive, "true"]
 
 Resources:
   ClouxterS3Bucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
-      BucketName: clouxter-test-bucket-20251027 
-      AccessControl: Private
+      # Nombre flexible: si no pasas uno, generamos uno único por cuenta y región
+      BucketName: !If
+        - UseProvidedName
+        - !Ref BucketName
+        - !Sub "clouxter-${AWS::AccountId}-${AWS::Region}-bucket"
+
+      # Dueño del bucket es dueño de los objetos; ACLs deshabilitadas
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+      # Bloqueo público completo
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+
+      # Versionado (buenas prácticas)
+      VersioningConfiguration:
+        Status: Enabled
+
+      # Cifrado en reposo (SSE-S3). Si luego quieres KMS, lo agregamos.
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+      # Lifecycle (opcional: Intelligent-Tiering + manejo de versiones)
+      LifecycleConfiguration:
+        Rules:
+          # Regla 1: transición a Intelligent-Tiering (opcional)
+          - Id: ToIntelligentTiering
+            Status: !If [UseIT, Enabled, Disabled]
+            Prefix: ""
+            Transitions:
+              - StorageClass: INTELLIGENT_TIERING
+                TransitionInDays: 30
+          # Regla 2: housekeeping de versiones antiguas (opcional Deep Archive)
+          - Id: NonCurrentVersionManagement
+            Status: Enabled
+            NoncurrentVersionTransitions:
+              - !If
+                - UseArchive
+                - { StorageClass: DEEP_ARCHIVE, TransitionInDays: 180 }
+                - { StorageClass: STANDARD_IA, TransitionInDays: 90 }
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 365
+          # Regla 3: abortar cargas multipart incompletas
+          - Id: AbortIncompleteMultipart
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
       Tags:
+        - Key: Project
+          Value: Clouxter
         - Key: Name
-          Value: ClouxterS3
+          Value: !If [UseProvidedName, !Ref BucketName, !Sub "clouxter-${AWS::AccountId}-${AWS::Region}-bucket"]
+
+  # Política para exigir TLS y, si se pasa VPC Endpoint, restringir por VPCE
+  ClouxterS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ClouxterS3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # 1) Denegar cualquier acceso sin TLS
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "${ClouxterS3Bucket.Arn}"
+              - !Sub "${ClouxterS3Bucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+          # 2) (Opcional) Restringir acceso solamente vía tu VPCE
+          - !If
+            - UseVpce
+            - {
+                Sid: "DenyRequestsNotThroughVPCE",
+                Effect: "Deny",
+                Principal: "*",
+                Action: "s3:*",
+                Resource:
+                  [ !Sub "${ClouxterS3Bucket.Arn}", !Sub "${ClouxterS3Bucket.Arn}/*" ],
+                Condition:
+                  StringNotEquals:
+                    aws:SourceVpce: !Ref VpcEndpointId
+              }
+            - { Ref: "AWS::NoValue" }
 
 Outputs:
   BucketName:
+    Description: Nombre del bucket
     Value: !Ref ClouxterS3Bucket
+  BucketArn:
+    Description: ARN del bucket
+    Value: !GetAtt ClouxterS3Bucket.Arn
