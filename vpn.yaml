@@ -1,26 +1,71 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Site-to-Site VPN (VGW+CGW+VPNConnection) with static routes to on-prem"
+Description: "Site-to-Site VPN (VGW+CGW+VPNConnection) con rutas estáticas a on-prem"
 
 Parameters:
   VpcId:
     Type: AWS::EC2::VPC::Id
     Description: VPC donde se adjunta la VPN (VGW)
+
   PrivateRouteTable1Id:
-    Type: AWS::EC2::RouteTable::Id
+    Type: String
     Description: Route Table privada #1 (AZ1)
+
   PrivateRouteTable2Id:
-    Type: AWS::EC2::RouteTable::Id
+    Type: String
     Description: Route Table privada #2 (AZ2)
+
   CustomerGatewayIp:
     Type: String
     Description: "IP pública del gateway on-prem (CGW), ej: 1.2.3.4"
+
   CustomerBgpAsn:
     Type: Number
     Default: 65000
-    Description: "ASN del on-prem (aunque usamos rutas estáticas, AWS lo pide)"
+    Description: "ASN on-prem; AWS lo pide aunque usemos rutas estáticas"
+
+  # Reutilizar recursos si ya existen (evita duplicados)
+  ExistingVpnGatewayId:
+    Type: String
+    Default: ""
+    Description: "(Opcional) vgw-xxxx existente; si se pasa, no se crea VGW nuevo"
+  ExistingCustomerGatewayId:
+    Type: String
+    Default: ""
+    Description: "(Opcional) cgw-xxxx existente; si se pasa, no se crea CGW nuevo"
+
+  # Rutas on-prem (ajusta según tu diagrama)
+  OnPremCidrA:
+    Type: String
+    Default: "172.16.0.0/16"
+  OnPremCidrB:
+    Type: String
+    Default: "172.16.1.0/24"
+  OnPremCidrC:
+    Type: String
+    Default: "172.16.2.0/24"
+
+  # Si ya creaste rutas manualmente y no quieres que CFN las haga
+  CreateRoutes:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+
+Conditions:
+  CreateVGW: !Equals [!Ref ExistingVpnGatewayId, ""]
+  CreateCGW: !Equals [!Ref ExistingCustomerGatewayId, ""]
+  UseCidrA:  !Not [!Equals [!Ref OnPremCidrA, ""]]
+  UseCidrB:  !Not [!Equals [!Ref OnPremCidrB, ""]]
+  UseCidrC:  !Not [!Equals [!Ref OnPremCidrC, ""]]
+  DoRouteA:  !And [!Equals [!Ref CreateRoutes, "true"], !Not [!Equals [!Ref OnPremCidrA, ""]]]
+  DoRouteB:  !And [!Equals [!Ref CreateRoutes, "true"], !Not [!Equals [!Ref OnPremCidrB, ""]]]
+  DoRouteC:  !And [!Equals [!Ref CreateRoutes, "true"], !Not [!Equals [!Ref OnPremCidrC, ""]]]
 
 Resources:
+  # --- Lado AWS: VGW ---
   VpnGateway:
+    Condition: CreateVGW
     Type: AWS::EC2::VPNGateway
     Properties:
       Type: ipsec.1
@@ -30,12 +75,15 @@ Resources:
           Value: ClouxterVGW
 
   AttachVpnGateway:
+    Condition: CreateVGW
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       VpcId: !Ref VpcId
       VpnGatewayId: !Ref VpnGateway
 
+  # --- Lado Cliente: CGW ---
   CustomerGateway:
+    Condition: CreateCGW
     Type: AWS::EC2::CustomerGateway
     Properties:
       Type: ipsec.1
@@ -45,90 +93,93 @@ Resources:
         - Key: Name
           Value: ClouxterCGW
 
+  # --- Conexión VPN ---
   VpnConnection:
     Type: AWS::EC2::VPNConnection
-    DependsOn: AttachVpnGateway
     Properties:
       Type: ipsec.1
       StaticRoutesOnly: true
-      CustomerGatewayId: !Ref CustomerGateway
-      VpnGatewayId: !Ref VpnGateway
+      CustomerGatewayId: !If [CreateCGW, !Ref CustomerGateway, !Ref ExistingCustomerGatewayId]
+      VpnGatewayId:      !If [CreateVGW, !Ref VpnGateway,      !Ref ExistingVpnGatewayId]
       Tags:
         - Key: Name
           Value: ClouxterVPN
 
-  # Rutas estáticas declaradas en la conexión (redes on-prem)
+  # --- Rutas estáticas en la conexión VPN ---
   VpnRouteA:
+    Condition: UseCidrA
     Type: AWS::EC2::VPNConnectionRoute
     Properties:
       VpnConnectionId: !Ref VpnConnection
-      DestinationCidrBlock: 172.16.0.0/16
+      DestinationCidrBlock: !Ref OnPremCidrA
 
   VpnRouteB:
+    Condition: UseCidrB
     Type: AWS::EC2::VPNConnectionRoute
     Properties:
       VpnConnectionId: !Ref VpnConnection
-      DestinationCidrBlock: 172.16.1.0/24
+      DestinationCidrBlock: !Ref OnPremCidrB
 
   VpnRouteC:
+    Condition: UseCidrC
     Type: AWS::EC2::VPNConnectionRoute
     Properties:
       VpnConnectionId: !Ref VpnConnection
-      DestinationCidrBlock: 172.16.2.0/24
+      DestinationCidrBlock: !Ref OnPremCidrC
 
-  # Rutas en RT privadas → hacia el VGW (3 por cada RT)
+  # --- Rutas en las Route Tables PRIVADAS → hacia el VGW ---
   PrivateToOnPremRoute1A:
+    Condition: DoRouteA
     Type: AWS::EC2::Route
-    DependsOn: AttachVpnGateway
     Properties:
       RouteTableId: !Ref PrivateRouteTable1Id
-      DestinationCidrBlock: 172.16.0.0/16
-      GatewayId: !Ref VpnGateway
+      DestinationCidrBlock: !Ref OnPremCidrA
+      GatewayId: !If [CreateVGW, !Ref VpnGateway, !Ref ExistingVpnGatewayId]
 
   PrivateToOnPremRoute1B:
+    Condition: DoRouteB
     Type: AWS::EC2::Route
-    DependsOn: AttachVpnGateway
     Properties:
       RouteTableId: !Ref PrivateRouteTable1Id
-      DestinationCidrBlock: 172.16.1.0/24
-      GatewayId: !Ref VpnGateway
+      DestinationCidrBlock: !Ref OnPremCidrB
+      GatewayId: !If [CreateVGW, !Ref VpnGateway, !Ref ExistingVpnGatewayId]
 
   PrivateToOnPremRoute1C:
+    Condition: DoRouteC
     Type: AWS::EC2::Route
-    DependsOn: AttachVpnGateway
     Properties:
       RouteTableId: !Ref PrivateRouteTable1Id
-      DestinationCidrBlock: 172.16.2.0/24
-      GatewayId: !Ref VpnGateway
+      DestinationCidrBlock: !Ref OnPremCidrC
+      GatewayId: !If [CreateVGW, !Ref VpnGateway, !Ref ExistingVpnGatewayId]
 
   PrivateToOnPremRoute2A:
+    Condition: DoRouteA
     Type: AWS::EC2::Route
-    DependsOn: AttachVpnGateway
     Properties:
       RouteTableId: !Ref PrivateRouteTable2Id
-      DestinationCidrBlock: 172.16.0.0/16
-      GatewayId: !Ref VpnGateway
+      DestinationCidrBlock: !Ref OnPremCidrA
+      GatewayId: !If [CreateVGW, !Ref VpnGateway, !Ref ExistingVpnGatewayId]
 
   PrivateToOnPremRoute2B:
+    Condition: DoRouteB
     Type: AWS::EC2::Route
-    DependsOn: AttachVpnGateway
     Properties:
       RouteTableId: !Ref PrivateRouteTable2Id
-      DestinationCidrBlock: 172.16.1.0/24
-      GatewayId: !Ref VpnGateway
+      DestinationCidrBlock: !Ref OnPremCidrB
+      GatewayId: !If [CreateVGW, !Ref VpnGateway, !Ref ExistingVpnGatewayId]
 
   PrivateToOnPremRoute2C:
+    Condition: DoRouteC
     Type: AWS::EC2::Route
-    DependsOn: AttachVpnGateway
     Properties:
       RouteTableId: !Ref PrivateRouteTable2Id
-      DestinationCidrBlock: 172.16.2.0/24
-      GatewayId: !Ref VpnGateway
+      DestinationCidrBlock: !Ref OnPremCidrC
+      GatewayId: !If [CreateVGW, !Ref VpnGateway, !Ref ExistingVpnGatewayId]
 
 Outputs:
   VpnGatewayId:
-    Value: !Ref VpnGateway
+    Value: !If [CreateVGW, !Ref VpnGateway, !Ref ExistingVpnGatewayId]
   CustomerGatewayId:
-    Value: !Ref CustomerGateway
+    Value: !If [CreateCGW, !Ref CustomerGateway, !Ref ExistingCustomerGatewayId]
   VpnConnectionId:
     Value: !Ref VpnConnection
