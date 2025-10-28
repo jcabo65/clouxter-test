@@ -1,166 +1,153 @@
-AWSTemplateFormatVersion: '2010-09-09'
-Description: EC2 Instances for Clouxter Test (secure-by-default + SSM)
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "EC2 x2 for Clouxter (SSM, IMDSv2, gp3 encrypted, SSH opcional)"
 
 Parameters:
   VpcId:
     Type: AWS::EC2::VPC::Id
-    Description: VPC donde lanzaremos las instancias
   PublicSubnet1Id:
     Type: AWS::EC2::Subnet::Id
-    Description: Subnet pública #1
   PublicSubnet2Id:
     Type: AWS::EC2::Subnet::Id
-    Description: Subnet pública #2
   InstanceType:
     Type: String
     Default: t3.micro
-    AllowedValues:
-      - t3.micro
-      - t3.small
-      - t3.medium
-      - t2.micro
-  # AMI vía SSM (evita hardcodear IDs)
-  AmiParameter:
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
-    Description: SSM path para la última Amazon Linux 2023
   EnableSSH:
     Type: String
-    Default: false
-    AllowedValues: [true, false]
-    Description: true para abrir SSH 22 (preferimos SSM)
+    Default: "false"
+    AllowedValues: ["true","false"]
   AdminCidr:
     Type: String
-    Default: 0.0.0.0/0
-    Description: CIDR permitido para SSH si EnableSSH=true (pon tu IP en prod)
+    Default: "0.0.0.0/0"
+    Description: "Solo aplica si EnableSSH=true (ej: 1.2.3.4/32)"
+
+Mappings: {}
 
 Conditions:
-  UseSSH: !Equals [!Ref EnableSSH, "true"]
+  OpenSSH: !Equals [!Ref EnableSSH, "true"]
 
 Resources:
-  # Seguridad base: HTTP abierto; SSH condicional (regla aparte)
+  # Security Group
   InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: SG for web servers (HTTP; SSH opcional)
+      GroupDescription: Allow HTTP (and SSH optional)
       VpcId: !Ref VpcId
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
       Tags:
         - Key: Name
           Value: ClouxterSG
-        - Key: Project
-          Value: Clouxter
 
-  # Regla SSH separada para poder condicionar
-  SgIngressSSH:
-    Condition: UseSSH
+  # Ingress HTTP 80
+  SGIngressHttp80:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !GetAtt InstanceSecurityGroup.GroupId
+      GroupId: !Ref InstanceSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: 0.0.0.0/0
+
+  # Ingress SSH 22 (condicional)
+  SGIngressSsh22:
+    Condition: OpenSSH
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
       IpProtocol: tcp
       FromPort: 22
       ToPort: 22
       CidrIp: !Ref AdminCidr
 
-  # Rol/Perfil para SSM Session Manager (evita llaves/SSH)
-  EC2Role:
+  # IAM Role + InstanceProfile (para SSM)
+  Ec2Role:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
-            Principal: { Service: ec2.amazonaws.com }
+            Principal:
+              Service: ec2.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Tags:
-        - Key: Project
-          Value: Clouxter
+        - Key: Name
+          Value: ClouxterEc2Role
 
-  EC2InstanceProfile:
+  Ec2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
-      Roles: [!Ref EC2Role]
+      Roles: [ !Ref Ec2Role ]
 
+  # Launch template-like config via Instance props
   EC2Instance1:
     Type: AWS::EC2::Instance
+    DependsOn: Ec2InstanceProfile
     Properties:
+      IamInstanceProfile: !Ref Ec2InstanceProfile
       InstanceType: !Ref InstanceType
-      ImageId: !Ref AmiParameter
-      IamInstanceProfile: !Ref EC2InstanceProfile
+      ImageId: !Ref AmiId  # viene del SSM parameter de abajo (ssm dynamic ref)
       SubnetId: !Ref PublicSubnet1Id
-      SecurityGroupIds: [!Ref InstanceSecurityGroup]
-      Monitoring: true
-      MetadataOptions:
-        HttpTokens: required          # IMDSv2 obligatorio
-        HttpEndpoint: enabled
-        HttpPutResponseHopLimit: 2
-      BlockDeviceMappings:
-        - DeviceName: /dev/xvda
-          Ebs:
-            VolumeSize: 10
-            VolumeType: gp3
-            Encrypted: true
-      UserData: !Base64 |
-        #!/bin/bash
-        set -euo pipefail
-        dnf -y update
-        dnf -y install httpd
-        echo "<h1>Clouxter - Instance1</h1>" > /var/www/html/index.html
-        systemctl enable httpd
-        systemctl start httpd
-      Tags:
-        - Key: Name
-          Value: Clouxter-Instance1
-        - Key: Project
-          Value: Clouxter
-
-  EC2Instance2:
-    Type: AWS::EC2::Instance
-    Properties:
-      InstanceType: !Ref InstanceType
-      ImageId: !Ref AmiParameter
-      IamInstanceProfile: !Ref EC2InstanceProfile
-      SubnetId: !Ref PublicSubnet2Id
-      SecurityGroupIds: [!Ref InstanceSecurityGroup]
-      Monitoring: true
+      SecurityGroupIds: [ !Ref InstanceSecurityGroup ]
       MetadataOptions:
         HttpTokens: required
         HttpEndpoint: enabled
-        HttpPutResponseHopLimit: 2
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
-            VolumeSize: 10
-            VolumeType: gp3
             Encrypted: true
+            VolumeType: gp3
+            VolumeSize: 8
       UserData: !Base64 |
         #!/bin/bash
-        set -euo pipefail
         dnf -y update
         dnf -y install httpd
-        echo "<h1>Clouxter - Instance2</h1>" > /var/www/html/index.html
-        systemctl enable httpd
-        systemctl start httpd
+        echo '<h1>Instance1 OK</h1>' > /var/www/html/index.html
+        systemctl enable --now httpd
       Tags:
         - Key: Name
-          Value: Clouxter-Instance2
-        - Key: Project
-          Value: Clouxter
+          Value: Instance1
+
+  EC2Instance2:
+    Type: AWS::EC2::Instance
+    DependsOn: Ec2InstanceProfile
+    Properties:
+      IamInstanceProfile: !Ref Ec2InstanceProfile
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmiId
+      SubnetId: !Ref PublicSubnet2Id
+      SecurityGroupIds: [ !Ref InstanceSecurityGroup ]
+      MetadataOptions:
+        HttpTokens: required
+        HttpEndpoint: enabled
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            Encrypted: true
+            VolumeType: gp3
+            VolumeSize: 8
+      UserData: !Base64 |
+        #!/bin/bash
+        dnf -y update
+        dnf -y install httpd
+        echo '<h1>Instance2 OK</h1>' > /var/www/html/index.html
+        systemctl enable --now httpd
+      Tags:
+        - Key: Name
+          Value: Instance2
+
+  # Dynamic reference al AMI AL2023 (ssm:GetParameter necesario)
+  AmiId:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 
 Outputs:
-  Instance1Id:        { Value: !Ref EC2Instance1 }
-  Instance1PrivateIp: { Value: !GetAtt EC2Instance1.PrivateIp }
-  Instance1PublicIp:  { Value: !GetAtt EC2Instance1.PublicIp }
-  Instance2Id:        { Value: !Ref EC2Instance2 }
-  Instance2PrivateIp: { Value: !GetAtt EC2Instance2.PrivateIp }
-  Instance2PublicIp:  { Value: !GetAtt EC2Instance2.PublicIp }
-  SecurityGroupId:    { Value: !Ref InstanceSecurityGroup }
+  InstanceSecurityGroupId:
+    Value: !Ref InstanceSecurityGroup
+  Instance1Id:
+    Value: !Ref EC2Instance1
+  Instance2Id:
+    Value: !Ref EC2Instance2
