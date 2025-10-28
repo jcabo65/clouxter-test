@@ -96,6 +96,7 @@ Resources:
   # --- Conexión VPN ---
   VpnConnection:
     Type: AWS::EC2::VPNConnection
+    DependsOn: AttachVpnGateway   # asegura VGW adjunto antes de crear la conexión
     Properties:
       Type: ipsec.1
       StaticRoutesOnly: true
@@ -131,6 +132,7 @@ Resources:
   PrivateToOnPremRoute1A:
     Condition: DoRouteA
     Type: AWS::EC2::Route
+    DependsOn: AttachVpnGateway   # crea la ruta solo después de que el VGW esté adjunto
     Properties:
       RouteTableId: !Ref PrivateRouteTable1Id
       DestinationCidrBlock: !Ref OnPremCidrA
@@ -139,6 +141,7 @@ Resources:
   PrivateToOnPremRoute1B:
     Condition: DoRouteB
     Type: AWS::EC2::Route
+    DependsOn: AttachVpnGateway
     Properties:
       RouteTableId: !Ref PrivateRouteTable1Id
       DestinationCidrBlock: !Ref OnPremCidrB
@@ -147,6 +150,7 @@ Resources:
   PrivateToOnPremRoute1C:
     Condition: DoRouteC
     Type: AWS::EC2::Route
+    DependsOn: AttachVpnGateway
     Properties:
       RouteTableId: !Ref PrivateRouteTable1Id
       DestinationCidrBlock: !Ref OnPremCidrC
@@ -155,6 +159,7 @@ Resources:
   PrivateToOnPremRoute2A:
     Condition: DoRouteA
     Type: AWS::EC2::Route
+    DependsOn: AttachVpnGateway
     Properties:
       RouteTableId: !Ref PrivateRouteTable2Id
       DestinationCidrBlock: !Ref OnPremCidrA
@@ -163,6 +168,7 @@ Resources:
   PrivateToOnPremRoute2B:
     Condition: DoRouteB
     Type: AWS::EC2::Route
+    DependsOn: AttachVpnGateway
     Properties:
       RouteTableId: !Ref PrivateRouteTable2Id
       DestinationCidrBlock: !Ref OnPremCidrB
@@ -171,6 +177,7 @@ Resources:
   PrivateToOnPremRoute2C:
     Condition: DoRouteC
     Type: AWS::EC2::Route
+    DependsOn: AttachVpnGateway
     Properties:
       RouteTableId: !Ref PrivateRouteTable2Id
       DestinationCidrBlock: !Ref OnPremCidrC
