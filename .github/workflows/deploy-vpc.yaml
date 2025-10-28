@@ -2,13 +2,13 @@ name: Deploy
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
     paths:
       - 'vpc-subnets.yaml'
       - 'ec2-instances.yaml'
       - 'dynamodb-table.yaml'
       - 's3-bucket.yaml'
+      - 'vpn.yaml'                   # <- agrega VPN a los triggers
 
 jobs:
   deploy:
@@ -24,51 +24,85 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
+      # (Opcional pero recomendado) Linter rápido de CFN
+      # - name: cfn-lint
+      #   run: |
+      #     pip install cfn-lint
+      #     cfn-lint -t vpc-subnets.yaml ec2-instances.yaml dynamodb-table.yaml s3-bucket.yaml vpn.yaml
+
+      # ---------- VPC ----------
       - name: Validate VPC Template
-        run: |
-          aws cloudformation validate-template --template-body file://vpc-subnets.yaml
+        run: aws cloudformation validate-template --template-body file://vpc-subnets.yaml
 
       - name: Deploy VPC Stack
         run: |
           aws cloudformation deploy \
             --template-file vpc-subnets.yaml \
             --stack-name ClouxterVPCStack \
-            --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset
 
-      - name: Validate EC2 Template
+      - name: Capture VPC outputs (IDs y RTs)
         run: |
-          aws cloudformation validate-template --template-body file://ec2-instances.yaml
+          echo "VPC_ID=$(aws cloudformation describe-stacks --stack-name ClouxterVPCStack --query "Stacks[0].Outputs[?OutputKey=='VpcId'].OutputValue" --output text)" >> $GITHUB_ENV
+          echo "PUB_SUBNET_1=$(aws cloudformation describe-stacks --stack-name ClouxterVPCStack --query "Stacks[0].Outputs[?OutputKey=='PublicSubnet1Id'].OutputValue" --output text)" >> $GITHUB_ENV
+          echo "PUB_SUBNET_2=$(aws cloudformation describe-stacks --stack-name ClouxterVPCStack --query "Stacks[0].Outputs[?OutputKey=='PublicSubnet2Id'].OutputValue" --output text)" >> $GITHUB_ENV
+          echo "PRT1=$(aws cloudformation describe-stacks --stack-name ClouxterVPCStack --query "Stacks[0].Outputs[?OutputKey=='PrivateRouteTable1Id'].OutputValue" --output text)" >> $GITHUB_ENV
+          echo "PRT2=$(aws cloudformation describe-stacks --stack-name ClouxterVPCStack --query "Stacks[0].Outputs[?OutputKey=='PrivateRouteTable2Id'].OutputValue" --output text)" >> $GITHUB_ENV
 
-      - name: Deploy EC2 Stack
-        run: |
-          aws cloudformation deploy \
-            --template-file ec2-instances.yaml \
-            --stack-name ClouxterEC2Stack \
-            --parameter-overrides VpcId=$(aws cloudformation describe-stacks --stack-name ClouxterVPCStack --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text) PublicSubnet1Id=$(aws cloudformation describe-stacks --stack-name ClouxterVPCStack --query 'Stacks[0].Outputs[?OutputKey==`PublicSubnet1Id`].OutputValue' --output text) PublicSubnet2Id=$(aws cloudformation describe-stacks --stack-name ClouxterVPCStack --query 'Stacks[0].Outputs[?OutputKey==`PublicSubnet2Id`].OutputValue' --output text) \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --no-fail-on-empty-changeset
-
-      - name: Validate DynamoDB Template
-        run: |
-          aws cloudformation validate-template --template-body file://dynamodb-table.yaml
-
-      - name: Deploy DynamoDB Stack
-        run: |
-          aws cloudformation deploy \
-            --template-file dynamodb-table.yaml \
-            --stack-name ClouxterDynamoDBStack \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --no-fail-on-empty-changeset
-
+      # ---------- S3 ----------
       - name: Validate S3 Template
-        run: |
-          aws cloudformation validate-template --template-body file://s3-bucket.yaml
+        run: aws cloudformation validate-template --template-body file://s3-bucket.yaml
 
       - name: Deploy S3 Stack
         run: |
           aws cloudformation deploy \
             --template-file s3-bucket.yaml \
             --stack-name ClouxterS3Stack \
+            --no-fail-on-empty-changeset
+
+      # ---------- DynamoDB ----------
+      - name: Validate DynamoDB Template
+        run: aws cloudformation validate-template --template-body file://dynamodb-table.yaml
+
+      - name: Deploy DynamoDB Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file dynamodb-table.yaml \
+            --stack-name ClouxterDynamoDBStack \
+            --no-fail-on-empty-changeset
+
+      # ---------- EC2 ----------
+      - name: Validate EC2 Template
+        run: aws cloudformation validate-template --template-body file://ec2-instances.yaml
+
+      - name: Deploy EC2 Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file ec2-instances.yaml \
+            --stack-name ClouxterEC2Stack \
+            --parameter-overrides \
+              VpcId=${{ env.VPC_ID }} \
+              PublicSubnet1Id=${{ env.PUB_SUBNET_1 }} \
+              PublicSubnet2Id=${{ env.PUB_SUBNET_2 }} \
+              InstanceType=t3.micro \
+              EnableSSH=false \
+              AdminCidr=0.0.0.0/0 \
             --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset
+
+      # ---------- VPN ----------
+      - name: Validate VPN Template
+        run: aws cloudformation validate-template --template-body file://vpn.yaml
+
+      - name: Deploy VPN Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file vpn.yaml \
+            --stack-name ClouxterVPNStack \
+            --parameter-overrides \
+              VpcId=${{ env.VPC_ID }} \
+              PrivateRouteTable1Id=${{ env.PRT1 }} \
+              PrivateRouteTable2Id=${{ env.PRT2 }} \
+              CustomerGatewayIp=${{ secrets.CGW_PUBLIC_IP }} \
+              CustomerBgpAsn=65000 \
             --no-fail-on-empty-changeset
