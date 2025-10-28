@@ -17,21 +17,22 @@ Parameters:
   CustomerGatewayIp:
     Type: String
     Description: "IP pública del gateway on-prem (CGW), ej: 1.2.3.4"
+    AllowedPattern: "(^$)|(^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\\.|$)){4}$)"
 
   CustomerBgpAsn:
     Type: Number
     Default: 65000
-    Description: "ASN on-prem; AWS lo pide aunque usemos rutas estáticas"
+    Description: "ASN on-prem; AWS lo solicita aunque usemos rutas estáticas"
 
-  # Reutilizar recursos si ya existen (evita duplicados)
+  # Reutiliza recursos existentes si ya están creados (evita duplicados)
   ExistingVpnGatewayId:
     Type: String
     Default: ""
-    Description: "(Opcional) vgw-xxxx existente; si se pasa, no se crea VGW nuevo"
+    Description: "(Opcional) vgw-xxxx existente; si se pasa, NO se crea VGW nuevo"
   ExistingCustomerGatewayId:
     Type: String
     Default: ""
-    Description: "(Opcional) cgw-xxxx existente; si se pasa, no se crea CGW nuevo"
+    Description: "(Opcional) cgw-xxxx existente; si se pasa, NO se crea CGW nuevo"
 
   # Rutas on-prem (ajusta según tu diagrama)
   OnPremCidrA:
@@ -48,9 +49,7 @@ Parameters:
   CreateRoutes:
     Type: String
     Default: "true"
-    AllowedValues:
-      - "true"
-      - "false"
+    AllowedValues: ["true", "false"]
 
 Conditions:
   CreateVGW: !Equals [!Ref ExistingVpnGatewayId, ""]
@@ -63,7 +62,7 @@ Conditions:
   DoRouteC:  !And [!Equals [!Ref CreateRoutes, "true"], !Not [!Equals [!Ref OnPremCidrC, ""]]]
 
 Resources:
-  # --- Lado AWS: VGW ---
+  # --- Lado AWS (VGW) ---
   VpnGateway:
     Condition: CreateVGW
     Type: AWS::EC2::VPNGateway
@@ -81,7 +80,7 @@ Resources:
       VpcId: !Ref VpcId
       VpnGatewayId: !Ref VpnGateway
 
-  # --- Lado Cliente: CGW ---
+  # --- Lado Cliente (CGW) ---
   CustomerGateway:
     Condition: CreateCGW
     Type: AWS::EC2::CustomerGateway
