@@ -1,6 +1,5 @@
-
-   AWSTemplateFormatVersion: '2010-09-09'
-Description: VPC with public/private subnets, NAT (1 or per-AZ), S3/DDB VPC Endpoints and optional Flow Logs
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "VPC with public/private subnets, NAT (1 or per-AZ), S3/DynamoDB endpoints, optional Flow Logs"
 
 Parameters:
   VpcCidr:
@@ -28,27 +27,26 @@ Parameters:
 
   CreateNatPerAz:
     Type: String
-    Default: false
-    AllowedValues: [true, false]
-    Description: "true = NAT por AZ (HA, más costo); false = un solo NAT en AZ1 (ahorro)."
+    Default: "false"
+    AllowedValues: ["true", "false"]
 
   FlowLogsS3Arn:
     Type: String
     Default: ""
-    Description: "(Opcional) ARN de bucket S3 para VPC Flow Logs (ej: arn:aws:s3:::clouxter-logs-bucket)"
+    Description: "(Optional) ARN of the S3 bucket for VPC Flow Logs"
+
+  EnableVpcEndpoints:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
 
   ProjectTag:
     Type: String
     Default: Clouxter
 
-  EnableVpcEndpoints:
-    Type: String
-    Default: true
-    AllowedValues: [true, false]
-    Description: "Crear VPC Endpoints (Gateway) para S3 y DynamoDB."
-
 Conditions:
   SingleNat: !Equals [!Ref CreateNatPerAz, "false"]
+  TwoNats:   !Equals [!Ref CreateNatPerAz, "true"]
   UseFlowLogs: !Not [!Equals [!Ref FlowLogsS3Arn, ""]]
   UseEndpoints: !Equals [!Ref EnableVpcEndpoints, "true"]
 
@@ -59,17 +57,20 @@ Resources:
       CidrBlock: !Ref VpcCidr
       EnableDnsSupport: true
       EnableDnsHostnames: true
-      InstanceTenancy: default
       Tags:
-        - { Key: Name, Value: ClouxterTestVPC }
-        - { Key: Project, Value: !Ref ProjectTag }
+        - Key: Name
+          Value: ClouxterTestVPC
+        - Key: Project
+          Value: !Ref ProjectTag
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
-        - { Key: Name, Value: ClouxterIGW }
-        - { Key: Project, Value: !Ref ProjectTag }
+        - Key: Name
+          Value: ClouxterIGW
+        - Key: Project
+          Value: !Ref ProjectTag
 
   AttachIGW:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -77,7 +78,6 @@ Resources:
       VpcId: !Ref MyVPC
       InternetGatewayId: !Ref InternetGateway
 
-  # ------ Public Subnets ------
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -86,8 +86,8 @@ Resources:
       AvailabilityZone: !Ref AvailabilityZone1
       MapPublicIpOnLaunch: true
       Tags:
-        - { Key: Name, Value: PublicSubnet1 }
-        - { Key: Tier, Value: public }
+        - { Key: Name,  Value: PublicSubnet1 }
+        - { Key: Tier,  Value: public }
         - { Key: Project, Value: !Ref ProjectTag }
 
   PublicSubnet2:
@@ -98,8 +98,8 @@ Resources:
       AvailabilityZone: !Ref AvailabilityZone2
       MapPublicIpOnLaunch: true
       Tags:
-        - { Key: Name, Value: PublicSubnet2 }
-        - { Key: Tier, Value: public }
+        - { Key: Name,  Value: PublicSubnet2 }
+        - { Key: Tier,  Value: public }
         - { Key: Project, Value: !Ref ProjectTag }
 
   PublicRouteTable:
@@ -107,7 +107,7 @@ Resources:
     Properties:
       VpcId: !Ref MyVPC
       Tags:
-        - { Key: Name, Value: PublicRouteTable }
+        - { Key: Name,  Value: PublicRouteTable }
         - { Key: Project, Value: !Ref ProjectTag }
 
   PublicRouteDefault:
@@ -117,19 +117,18 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
-  SubnetRouteTableAssociation1:
+  AssocPublicRT1:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PublicSubnet1
       RouteTableId: !Ref PublicRouteTable
 
-  SubnetRouteTableAssociation2:
+  AssocPublicRT2:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref PublicRouteTable
 
-  # ------ Private Subnets ------
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -138,8 +137,8 @@ Resources:
       AvailabilityZone: !Ref AvailabilityZone1
       MapPublicIpOnLaunch: false
       Tags:
-        - { Key: Name, Value: PrivateSubnet1 }
-        - { Key: Tier, Value: private }
+        - { Key: Name,  Value: PrivateSubnet1 }
+        - { Key: Tier,  Value: private }
         - { Key: Project, Value: !Ref ProjectTag }
 
   PrivateSubnet2:
@@ -150,8 +149,8 @@ Resources:
       AvailabilityZone: !Ref AvailabilityZone2
       MapPublicIpOnLaunch: false
       Tags:
-        - { Key: Name, Value: PrivateSubnet2 }
-        - { Key: Tier, Value: private }
+        - { Key: Name,  Value: PrivateSubnet2 }
+        - { Key: Tier,  Value: private }
         - { Key: Project, Value: !Ref ProjectTag }
 
   PrivateRouteTable1:
@@ -159,7 +158,7 @@ Resources:
     Properties:
       VpcId: !Ref MyVPC
       Tags:
-        - { Key: Name, Value: PrivateRouteTable1 }
+        - { Key: Name,  Value: PrivateRouteTable1 }
         - { Key: Project, Value: !Ref ProjectTag }
 
   PrivateRouteTable2:
@@ -167,7 +166,7 @@ Resources:
     Properties:
       VpcId: !Ref MyVPC
       Tags:
-        - { Key: Name, Value: PrivateRouteTable2 }
+        - { Key: Name,  Value: PrivateRouteTable2 }
         - { Key: Project, Value: !Ref ProjectTag }
 
   AssocPrivateRT1:
@@ -182,13 +181,12 @@ Resources:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable2
 
-  # ------ NAT Gateways ------
   EipNat1:
     Type: AWS::EC2::EIP
     Properties:
       Domain: vpc
       Tags:
-        - { Key: Name, Value: NatEip1 }
+        - { Key: Name,  Value: NatEip1 }
         - { Key: Project, Value: !Ref ProjectTag }
 
   NatGateway1:
@@ -197,26 +195,26 @@ Resources:
       AllocationId: !GetAtt EipNat1.AllocationId
       SubnetId: !Ref PublicSubnet1
       Tags:
-        - { Key: Name, Value: NatGw1 }
+        - { Key: Name,  Value: NatGw1 }
         - { Key: Project, Value: !Ref ProjectTag }
 
   EipNat2:
-    Condition: !Not [!Ref SingleNat]   # solo si CreateNatPerAz = true
+    Condition: TwoNats
     Type: AWS::EC2::EIP
     Properties:
       Domain: vpc
       Tags:
-        - { Key: Name, Value: NatEip2 }
+        - { Key: Name,  Value: NatEip2 }
         - { Key: Project, Value: !Ref ProjectTag }
 
   NatGateway2:
-    Condition: !Not [!Ref SingleNat]
+    Condition: TwoNats
     Type: AWS::EC2::NatGateway
     Properties:
       AllocationId: !GetAtt EipNat2.AllocationId
       SubnetId: !Ref PublicSubnet2
       Tags:
-        - { Key: Name, Value: NatGw2 }
+        - { Key: Name,  Value: NatGw2 }
         - { Key: Project, Value: !Ref ProjectTag }
 
   PrivateDefaultRoute1:
@@ -233,7 +231,6 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !If [SingleNat, !Ref NatGateway1, !Ref NatGateway2]
 
-  # ------ VPC Endpoints (Gateway) para S3 y DynamoDB ------
   VPCEndpointS3:
     Condition: UseEndpoints
     Type: AWS::EC2::VPCEndpoint
@@ -246,7 +243,7 @@ Resources:
         - !Ref PrivateRouteTable1
         - !Ref PrivateRouteTable2
       Tags:
-        - { Key: Name, Value: VPCEndpointS3 }
+        - { Key: Name,  Value: VPCEndpointS3 }
         - { Key: Project, Value: !Ref ProjectTag }
 
   VPCEndpointDDB:
@@ -261,10 +258,9 @@ Resources:
         - !Ref PrivateRouteTable1
         - !Ref PrivateRouteTable2
       Tags:
-        - { Key: Name, Value: VPCEndpointDDB }
+        - { Key: Name,  Value: VPCEndpointDDB }
         - { Key: Project, Value: !Ref ProjectTag }
 
-  # ------ VPC Flow Logs (a S3, opcional) ------
   VpcFlowLogs:
     Condition: UseFlowLogs
     Type: AWS::EC2::FlowLog
@@ -276,20 +272,29 @@ Resources:
       LogDestination: !Ref FlowLogsS3Arn
       MaxAggregationInterval: 60
       Tags:
-        - { Key: Name, Value: ClouxterVPCFlowLogs }
+        - { Key: Name,  Value: ClouxterVPCFlowLogs }
         - { Key: Project, Value: !Ref ProjectTag }
 
 Outputs:
-  VpcId:               { Value: !Ref MyVPC }
-  VpcCidrOut:          { Value: !Ref VpcCidr }
-  PublicSubnet1Id:     { Value: !Ref PublicSubnet1 }
-  PublicSubnet2Id:     { Value: !Ref PublicSubnet2 }
-  PrivateSubnet1Id:    { Value: !Ref PrivateSubnet1 }
-  PrivateSubnet2Id:    { Value: !Ref PrivateSubnet2 }
-  PublicRouteTableId:  { Value: !Ref PublicRouteTable }
-  PrivateRouteTable1Id:{ Value: !Ref PrivateRouteTable1 }
-  PrivateRouteTable2Id:{ Value: !Ref PrivateRouteTable2 }
-  NatGateway1Id:       { Value: !Ref NatGateway1 }
+  VpcId:
+    Value: !Ref MyVPC
+  VpcCidrOut:
+    Value: !Ref VpcCidr
+  PublicSubnet1Id:
+    Value: !Ref PublicSubnet1
+  PublicSubnet2Id:
+    Value: !Ref PublicSubnet2
+  PrivateSubnet1Id:
+    Value: !Ref PrivateSubnet1
+  PrivateSubnet2Id:
+    Value: !Ref PrivateSubnet2
+  PublicRouteTableId:
+    Value: !Ref PublicRouteTable
+  PrivateRouteTable1Id:
+    Value: !Ref PrivateRouteTable1
+  PrivateRouteTable2Id:
+    Value: !Ref PrivateRouteTable2
+  NatGateway1Id:
+    Value: !Ref NatGateway1
   NatGateway2Id:
     Value: !If [SingleNat, "not-created", !Ref NatGateway2]
-
